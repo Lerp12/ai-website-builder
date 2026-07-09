@@ -1,0 +1,32 @@
+# ---- secrets / local config ----
+.env
+.env.*
+!.env.example
+
+# ---- python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# ---- node / frontend build ----
+node_modules/
+dist/
+.vite/
+
+# ---- local data / logs ----
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.log
+
+# ---- os / editor ----
+.DS_Store
+.vscode/
+.idea/
+.agents/
+junk/
+skills-lock.json
