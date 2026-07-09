@@ -2,6 +2,8 @@
 
 AI-powered website builder. Describe what you want in plain text, get a live preview you can edit through conversation.
 
+<img width="1906" height="938" alt="image" src="https://github.com/user-attachments/assets/994baccf-e065-4fc6-93e6-07b6a83c58d9" />
+
 ## Stack
 
 - **Backend** — Python, FastAPI, SQLite, OpenAI-compatible API
