@@ -38,6 +38,7 @@ function splitUnit(val: string): { num: string; unit: string } {
 
 export default function ElementProperties({ selectedId, html, onStyleChange, onHtmlChange }: Props) {
   const [styles, setStyles] = useState<Record<string, string>>({});
+  const [computed, setComputed] = useState<Record<string, string>>({});
   const [tag, setTag] = useState("");
   const lastIdRef = useRef<string | null>(null);
 
@@ -45,6 +46,7 @@ export default function ElementProperties({ selectedId, html, onStyleChange, onH
   useEffect(() => {
     if (!selectedId) {
       setStyles({});
+      setComputed({});
       setTag("");
       lastIdRef.current = null;
       return;
@@ -53,6 +55,16 @@ export default function ElementProperties({ selectedId, html, onStyleChange, onH
     if (!el) return;
     setTag(el.tagName.toLowerCase());
     setStyles(parseStyles(el.getAttribute("style") || ""));
+    // Computed values seed the number fields when no inline style exists,
+    // so steppers step from the element's real value instead of 0.
+    const cs = window.getComputedStyle(el);
+    setComputed({
+      "font-size": cs.fontSize,
+      padding: cs.padding,
+      margin: cs.margin,
+      "border-radius": cs.borderRadius,
+      opacity: cs.opacity,
+    });
     lastIdRef.current = selectedId;
   }, [selectedId, html]);
 
@@ -84,14 +96,14 @@ export default function ElementProperties({ selectedId, html, onStyleChange, onH
     );
   }
 
-  const fontSize = splitUnit(styles["font-size"] || "");
+  const fontSize = splitUnit(styles["font-size"] || computed["font-size"] || "");
   const color = styles["color"] || "";
   const bgColor = styles["background-color"] || "";
   const textAlign = styles["text-align"] || "";
-  const padding = splitUnit(styles["padding"] || styles["padding-top"] || "");
-  const margin = splitUnit(styles["margin"] || styles["margin-top"] || "");
-  const borderRadius = splitUnit(styles["border-radius"] || "");
-  const opacity = styles["opacity"] || "";
+  const padding = splitUnit(styles["padding"] || styles["padding-top"] || computed["padding"] || "");
+  const margin = splitUnit(styles["margin"] || styles["margin-top"] || computed["margin"] || "");
+  const borderRadius = splitUnit(styles["border-radius"] || computed["border-radius"] || "");
+  const opacity = styles["opacity"] || computed["opacity"] || "";
 
   return (
     <div className="space-y-3 pb-4">
@@ -254,7 +266,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return (
     <div className="flex items-center justify-between gap-2">
       <label className="shrink-0 text-[11px] text-smoke">{label}</label>
-      <div className="w-32">{children}</div>
+      <div className="w-40">{children}</div>
     </div>
   );
 }
@@ -272,22 +284,45 @@ function NumberInput({
   max?: number;
   suffix?: string;
 }) {
+  const bump = (dir: 1 | -1) => {
+    const n = parseFloat(value);
+    const base = Number.isFinite(n) ? n : 0;
+    const next = Math.min(max ?? Infinity, Math.max(min ?? -Infinity, base + dir));
+    onChange(String(Math.round(next * 100) / 100));
+  };
   return (
-    <div className="relative flex-1">
-      <input
-        type="number"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        min={min}
-        max={max}
-        placeholder="—"
-        className="w-full rounded border border-charcoal bg-obsidian px-2 py-1 text-right font-mono text-[11px] text-snow outline-none transition focus:border-accent/50 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-      />
-      {suffix && (
-        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-graphite">
-          {suffix}
-        </span>
-      )}
+    <div className="flex flex-1 gap-0.5">
+      <button
+        type="button"
+        onClick={() => bump(-1)}
+        aria-label="decrease"
+        className="h-7 w-5 shrink-0 rounded border border-charcoal bg-ash text-[12px] leading-none text-silver outline-none transition hover:border-accent/50 hover:text-snow active:bg-accent/20"
+      >
+        −
+      </button>
+      <div className="relative min-w-0 flex-1">
+        <input
+          type="number"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          min={min}
+          max={max}
+          className="w-full rounded border border-charcoal bg-obsidian px-1 py-1 text-right font-mono text-[11px] text-snow outline-none transition focus:border-accent/50 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        />
+        {suffix && (
+          <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-graphite">
+            {suffix}
+          </span>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={() => bump(1)}
+        aria-label="increase"
+        className="h-7 w-5 shrink-0 rounded border border-charcoal bg-ash text-[12px] leading-none text-silver outline-none transition hover:border-accent/50 hover:text-snow active:bg-accent/20"
+      >
+        +
+      </button>
     </div>
   );
 }
