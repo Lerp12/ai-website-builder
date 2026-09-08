@@ -475,19 +475,28 @@ function Workspace() {
         .map(([k, v]) => `${k}: ${v}`)
         .join("; ");
       const escapedId = dataId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const regex = new RegExp(
-        `(<[^>]*?data-id="${escapedId}"[^>]*?)style="[^"]*"`,
+      // style attribute after data-id, in the same tag
+      const after = new RegExp(
+        `(<[^>]*?data-id="${escapedId}"[^>]*?style=")[^"]*(")`,
+        "i",
+      );
+      // style attribute before data-id, in the same tag
+      const before = new RegExp(
+        `(<[^>]*?style=")[^"]*("[^>]*?data-id="${escapedId}")`,
+        "i",
+      );
+      // no style attribute yet — insert one into the tag
+      const insert = new RegExp(
+        `(<[^>]*?data-id="${escapedId}"[^>]*?)(/?>)`,
         "i",
       );
       let next: string;
-      if (regex.test(html)) {
-        next = html.replace(regex, `$1style="${styleStr}"`);
+      if (after.test(html)) {
+        next = html.replace(after, `$1${styleStr}$2`);
+      } else if (before.test(html)) {
+        next = html.replace(before, `$1${styleStr}$2`);
       } else {
-        const tagRegex = new RegExp(
-          `(<[^>]*?data-id="${escapedId}"[^>]*?)(/?>)`,
-          "i",
-        );
-        next = html.replace(tagRegex, `$1style="${styleStr}"$2`);
+        next = html.replace(insert, `$1 style="${styleStr}"$2`);
       }
       handleHtmlChange(next);
     },

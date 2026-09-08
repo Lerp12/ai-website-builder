@@ -162,3 +162,24 @@ textarea:focus:not(:focus-visible) {
 .canvas-scope [data-id]:not(.b-editing):hover {
   cursor: double-click;
 }
+
+/* ---------- code view: highlighted overlay + transparent textarea ---------- */
+.code-input {
+  color: transparent;
+  caret-color: var(--color-accent);
+}
+.code-input::selection {
+  background: rgba(59, 130, 246, 0.30);
+  color: transparent;
+}
+.code-hl,
+.code-input {
+  tab-size: 2;
+  -moz-tab-size: 2;
+}
+.tk-p { color: #6e6e6e; }               /* punctuation < > / */
+.tk-t { color: #60a5fa; }               /* tag names */
+.tk-a { color: #9cdcfe; }               /* attribute names */
+.tk-v { color: #f5c26b; }               /* attribute values */
+.tk-c { color: #6b7280; font-style: italic; } /* comments */
+.tk-d { color: #898989; font-style: italic; } /* doctype */

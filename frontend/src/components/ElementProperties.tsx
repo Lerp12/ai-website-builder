@@ -129,6 +129,11 @@ export default function ElementProperties({ selectedId, html, onStyleChange, onH
           </button>
           <button
             onClick={() => {
+              // Deselect in the canvas DOM so App's selection poller clears selectedId
+              document.querySelectorAll(".canvas-scope .b-selected, .canvas-scope .b-editing").forEach((el) => {
+                (el as HTMLElement).contentEditable = "false";
+                el.classList.remove("b-selected", "b-editing");
+              });
               setStyles({});
               setTag("");
               lastIdRef.current = null;

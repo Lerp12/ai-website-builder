@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import AsyncIterator
 
 from fastapi import FastAPI, HTTPException
@@ -16,14 +17,14 @@ from .dtos import (
     GenerateRequest,
     UpdateMessageRequest,
 )
-from .llm import has_key, model, stream_chat
+from .llm import EDIT_SCHEMA, GENERATE_SCHEMA, has_key, model, stream_chat
 from .prompts import EDIT_PROMPT, GENERATE_PROMPT, REWRITE_TEXT_SYSTEM
 from .themes import direction_block, random_theme
 from .utils import (
     apply_html_changes,
     derive_title,
     ensure_data_ids,
-    extract_edit_response,
+    partial_json_string_value,
     sse,
 )
 
@@ -56,6 +57,7 @@ async def generate(req: GenerateRequest) -> StreamingResponse:
             prompt = rewritten.strip() or prompt
 
         buffer = ""
+        emitted = 0
 
         try:
             theme = random_theme()
@@ -63,11 +65,15 @@ async def generate(req: GenerateRequest) -> StreamingResponse:
             async for chunk in stream_chat(
                 system=system_prompt,
                 user=f"Create a page for: {prompt}",
+                response_format=GENERATE_SCHEMA,
             ):
                 buffer += chunk
-                yield sse("delta", {"chunk": chunk})
+                html_so_far = partial_json_string_value(buffer, "html") or ""
+                if len(html_so_far) > emitted:
+                    yield sse("delta", {"chunk": html_so_far[emitted:]})
+                    emitted = len(html_so_far)
 
-            html_body = ensure_data_ids(buffer)
+            html_body = ensure_data_ids(json.loads(buffer)["html"])
             page = db.create_page(html_body, title=title, prompt=req.prompt)
 
             if req.chat_id:
@@ -125,14 +131,13 @@ async def edit(req: EditRequest) -> StreamingResponse:
             )
 
             buffer = ""
-            async for chunk in stream_chat(system=EDIT_PROMPT, user=user_msg):
+            async for chunk in stream_chat(
+                system=EDIT_PROMPT, user=user_msg, response_format=EDIT_SCHEMA
+            ):
                 buffer += chunk
                 yield sse("delta", {"chunk": chunk, "round": round_num})
 
-            parsed = extract_edit_response(buffer)
-            if parsed is None:
-                total_errors.append(f"Round {round_num}: could not parse LLM output")
-                break
+            parsed = json.loads(buffer)
 
             changes = parsed.get("changes", [])
             summary = parsed.get("summary", "")

@@ -53,8 +53,21 @@ export default memo(function Canvas({
   useEffect(() => {
     if (!codeActive) return;
     if (typeof document !== "undefined" && document.activeElement === codeRef.current) return;
-    setCode(html);
+    setCode(toFullDocument(html));
   }, [html, codeActive]);
+
+  // React replaces the canvas DOM on every html change (dangerouslySetInnerHTML),
+  // dropping imperative classes and leaving editing refs stale. Restore selection.
+  useEffect(() => {
+    editingIdRef.current = null;
+    if (selectedIdRef.current) {
+      const el = scopeRef.current?.querySelector(
+        `[data-id="${CSS.escape(selectedIdRef.current)}"]`,
+      );
+      if (el) el.classList.add("b-selected");
+      else selectedIdRef.current = null;
+    }
+  }, [html]);
 
   const handleClick = useCallback((e: React.MouseEvent) => {
     if (isEmpty || streaming) return;
@@ -190,14 +203,14 @@ export default memo(function Canvas({
   const toggleCode = () => {
     setCodeActive((v) => {
       const next = !v;
-      if (next) setCode(html);
+      if (next) setCode(toFullDocument(html));
       return next;
     });
   };
 
   const onCodeChange = (v: string) => {
     setCode(v);
-    onHtmlChange(v);
+    onHtmlChange(toFragment(v));
   };
 
   const width = DEVICE_WIDTH[device];
@@ -214,25 +227,40 @@ export default memo(function Canvas({
       />
       <div className="flex flex-1 overflow-hidden">
         {codeActive && (
-          <div className="flex w-1/2 min-w-0 flex-col border-r border-charcoal bg-ink">
+          <div className="flex min-h-0 w-full flex-1 flex-col bg-ink">
             <div className="flex items-center justify-between border-b border-charcoal px-4 py-2">
               <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-smoke">code · html</span>
               <span className="font-mono text-[10px] text-graphite">edits sync to preview &amp; save</span>
             </div>
-            <textarea
-              ref={codeRef}
-              value={code}
-              onChange={(e) => onCodeChange(e.target.value)}
-              spellCheck={false}
-              autoCapitalize="off"
-              autoCorrect="off"
-              placeholder="<div>edit the html…</div>"
-              aria-label="HTML code editor"
-              className="scroll-thin flex-1 resize-none bg-transparent p-4 font-mono text-xs leading-relaxed text-snow outline-none placeholder:text-graphite"
-            />
+            <div className="relative min-h-0 flex-1">
+              <pre
+                className="code-hl pointer-events-none absolute inset-0 overflow-hidden p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words"
+                aria-hidden
+              >
+                <code dangerouslySetInnerHTML={{ __html: highlightHtml(code) + "\n" }} />
+              </pre>
+              <textarea
+                ref={codeRef}
+                value={code}
+                onChange={(e) => onCodeChange(e.target.value)}
+                onScroll={(e) => {
+                  const pre = e.currentTarget.previousElementSibling;
+                  if (pre) {
+                    pre.scrollTop = e.currentTarget.scrollTop;
+                    pre.scrollLeft = e.currentTarget.scrollLeft;
+                  }
+                }}
+                spellCheck={false}
+                autoCapitalize="off"
+                autoCorrect="off"
+                placeholder="<div>edit the html…</div>"
+                aria-label="HTML code editor"
+                className="code-input scroll-thin absolute inset-0 resize-none bg-transparent p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words outline-none placeholder:text-graphite"
+              />
+            </div>
           </div>
         )}
-        <div className="min-w-0 flex-1 overflow-hidden">
+        <div className={codeActive ? "hidden" : "min-w-0 flex-1 overflow-hidden"}>
           <div ref={frameRef} className="scroll-thin bg-editor-grid h-full overflow-auto p-6">
             <div
               className="builder-canvas mx-auto overflow-hidden rounded-2xl border border-charcoal bg-white transition-all"
@@ -280,6 +308,76 @@ export default memo(function Canvas({
 });
 
 const SCOPE_CLASS = "canvas-scope";
+
+/** Wrap a stored body fragment into a complete, standalone HTML document. */
+function toFullDocument(html: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Page</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #ffffff; color: #111111; }
+</style>
+</head>
+<body>
+${html}
+</body>
+</html>`;
+}
+
+/** Extract the body fragment back out of an edited document (or raw fragment). */
+function toFragment(code: string): string {
+  const doc = new DOMParser().parseFromString(code, "text/html");
+  return doc.body.innerHTML.trim();
+}
+
+/* ---------- html syntax highlighting ---------- */
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** Highlight an attribute blob: name="value" pairs, stray quotes left alone. */
+function highlightAttrs(s: string): string {
+  return s.replace(
+    /([a-zA-Z_:@][\w:.@-]*)(\s*=\s*)("[^"]*"|'[^']*')?/g,
+    (_m, name: string, eq: string, val?: string) => {
+      let r = `<span class="tk-a">${escapeHtml(name)}</span>${escapeHtml(eq)}`;
+      if (val) r += `<span class="tk-v">${escapeHtml(val)}</span>`;
+      return r;
+    },
+  );
+}
+
+/** Tokenize HTML into colored spans (tags, attrs, values, comments, doctype). */
+function highlightHtml(code: string): string {
+  const re =
+    /(<!--[\s\S]*?-->)|(<![a-zA-Z][^>]*>)|(<)(\/?)([a-zA-Z][\w-]*)((?:[^>"']|"[^"]*"|'[^']*')*)(\/?>)/g;
+  let out = "";
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(code))) {
+    out += escapeHtml(code.slice(last, m.index));
+    if (m[1]) {
+      out += `<span class="tk-c">${escapeHtml(m[1])}</span>`;
+    } else if (m[2] !== undefined) {
+      out += `<span class="tk-d">${escapeHtml(m[0])}</span>`;
+    } else {
+      out +=
+        `<span class="tk-p">${escapeHtml(m[3])}${escapeHtml(m[4])}</span>` +
+        `<span class="tk-t">${escapeHtml(m[5])}</span>` +
+        highlightAttrs(m[6]) +
+        `<span class="tk-p">${escapeHtml(m[7])}</span>`;
+    }
+    last = re.lastIndex;
+  }
+  out += escapeHtml(code.slice(last));
+  return out;
+}
 
 /** Scope all <style> tag contents so selectors are prefixed with .canvas-scope. */
 function scopeHtml(html: string): string {

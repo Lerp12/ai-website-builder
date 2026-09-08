@@ -61,6 +61,45 @@ def derive_title(prompt: str) -> str:
     return " ".join(words).capitalize() or "Untitled"
 
 
+_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", '"': '"', "\\": "\\", "/": "/", "b": "\b", "f": "\f"}
+
+
+def partial_json_string_value(buffer: str, key: str) -> str | None:
+    """Best-effort value of a JSON string field from a partial (streaming) buffer.
+
+    Returns None if the key / opening quote has not arrived yet. Returns the
+    decoded text collected so far while the string is still open.
+    """
+    m = re.search(rf'"{re.escape(key)}"\s*:\s*"', buffer)
+    if not m:
+        return None
+    i = m.end()
+    out: list[str] = []
+    while i < len(buffer):
+        c = buffer[i]
+        if c == '"':
+            return "".join(out)  # closing quote — complete
+        if c == "\\":
+            if i + 1 >= len(buffer):
+                break  # escape still streaming — wait for more
+            esc = buffer[i + 1]
+            if esc == "u":
+                if i + 6 > len(buffer):
+                    break
+                try:
+                    out.append(chr(int(buffer[i + 2 : i + 6], 16)))
+                except ValueError:
+                    pass
+                i += 6
+                continue
+            out.append(_ESCAPES.get(esc, esc))
+            i += 2
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)  # quote still open — partial
+
+
 def apply_html_changes(html: str, changes: list[dict]) -> tuple[str, list[str]]:
     """Apply a list of {id, html} changes to the page HTML.
 
